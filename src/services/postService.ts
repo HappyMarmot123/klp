@@ -51,12 +51,16 @@ export class PostService {
 
       const paginatedDocs = allDocs.slice(offset, offset + limitCount);
 
-      return paginatedDocs.map((doc) => ({
-        id: doc.id,
-        ...doc.data(),
-        createdAt: doc.data().createdAt.toDate(),
-        updatedAt: doc.data().updatedAt.toDate(),
-      })) as Post[];
+      return paginatedDocs.map((doc) => {
+        const data = doc.data();
+        return {
+          id: doc.id,
+          ...data,
+          createdAt: data.createdAt.toDate(),
+          updatedAt: data.updatedAt.toDate(),
+          commentCount: data.commentCount || 0,
+        };
+      }) as Post[];
     } catch (error) {
       throw error;
     }
@@ -125,9 +129,10 @@ export class PostService {
       const postRef = doc(db, "posts", commentData.postId);
       const postSnap = await getDoc(postRef);
       if (postSnap.exists()) {
-        const currentComments = postSnap.data().comments || 0;
+        const currentCommentCount = postSnap.data().commentCount || 0;
         await updateDoc(postRef, {
-          comments: currentComments + 1,
+          commentCount: currentCommentCount + 1,
+          updatedAt: new Date(),
         });
       }
 
@@ -155,6 +160,37 @@ export class PostService {
         (a, b) => a.createdAt.getTime() - b.createdAt.getTime()
       );
     } catch (error) {
+      throw error;
+    }
+  }
+
+  static async syncCommentCounts() {
+    try {
+      const postsQuery = query(collection(db, "posts"));
+      const postsSnapshot = await getDocs(postsQuery);
+
+      const updatePromises = postsSnapshot.docs.map(async (postDoc) => {
+        const postId = postDoc.id;
+        const commentsQuery = query(
+          collection(db, "comments"),
+          where("postId", "==", postId)
+        );
+        const commentsSnapshot = await getDocs(commentsQuery);
+        const actualCommentCount = commentsSnapshot.size;
+
+        const currentCommentCount = postDoc.data().commentCount || 0;
+
+        if (actualCommentCount !== currentCommentCount) {
+          await updateDoc(doc(db, "posts", postId), {
+            commentCount: actualCommentCount,
+            updatedAt: new Date(),
+          });
+        }
+      });
+
+      await Promise.all(updatePromises);
+    } catch (error) {
+      console.error("Error syncing comment counts:", error);
       throw error;
     }
   }

@@ -36,6 +36,10 @@ export default function HomeScreen({ navigation }: any) {
         setLoading(true);
       }
 
+      if (page === 1) {
+        await PostService.syncCommentCounts();
+      }
+
       const [postsData, totalCount] = await Promise.all([
         PostService.getPosts(page, postsPerPage),
         PostService.getTotalPostsCount(),
